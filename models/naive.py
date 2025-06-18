@@ -23,7 +23,6 @@ class Naive(ContinualModel):
         :return: the value of the loss function
         """
         self.net.train()
-        inputs, labels = inputs.to(self.device), labels.to(self.device)
         outputs = self.inference(inputs)
 
         self.opt.zero_grad()

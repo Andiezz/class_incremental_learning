@@ -1,5 +1,5 @@
+import os
 from argparse import Namespace
-
 import torch
 from data.utils.continual_dataset import ContinualDataset
 from models.utils.continual_model import ContinualModel
@@ -40,22 +40,23 @@ def evaluate(
     task_wise_accuracy = [0.0] * dataset.N_TASKS
     with torch.no_grad():
         for task, test_loader in enumerate(test_loaders):
-            # TODO
-            # BUG
+            correct, total = 0.0, 0.0
             for inputs, labels in test_loader:
                 inputs, labels = inputs.to(model.device), labels.to(model.device)
                 outputs = model.inference(inputs)
 
                 # Mask outputs for classes not in the current task
-                mask_classes(outputs, dataset, task)
+                # mask_classes(outputs, dataset, task)
 
                 # Compute accuracy
                 _, predicted = torch.max(outputs, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
-                accuracy = correct / total if total > 0 else 0.0
-
-                task_wise_accuracy[task - 1] = accuracy
+        
+            # Calculate accuracy for the current task
+            accuracy = correct / total if total > 0 else 0.0
+            
+            task_wise_accuracy[task] = accuracy
 
     # Print task-wise accuracy
     for i, acc in enumerate(task_wise_accuracy):
@@ -82,12 +83,27 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
     print(
         f"Training on {tasks} tasks with {dataset.N_CLASSES_PER_TASK} classes per task."
     )
+    
+    if args.resume_training:
+        checkpoint = os.path.join(args.checkpoint_path, model.NAME + "last.pt")
+        saved_data = torch.load(checkpoint)
+        model.load_state_dict(saved_data["model_state_dict"])
+        model.opt.load_state_dict(saved_data["optimizer_state_dict"])
+        start_task = saved_data["current_task"]
+        start_epoch = saved_data["epoch"]
+        task_wise_accuracy = saved_data["task_wise_accuracy"]
+        task_max_accuracy = saved_data["task_max_accuracy"]
 
-    for current_task in range(tasks):
+        print(f"Resuming training from task {start_task + 1}, epoch {start_epoch + 1}.")
+    else:
+        start_task = 0
+        start_epoch = 0
+
+    for current_task in range(start_task, tasks):
         print(f"Training on task {current_task + 1}/{tasks}")
         train_loader, _ = dataset.get_data_loaders(masked_loaders=True)
 
-        for epoch in range(args.epochs):
+        for epoch in range(start_epoch, args.epochs):
             model.net.train()
 
             for i, (inputs, labels) in enumerate(train_loader):
@@ -95,6 +111,18 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
                 loss = model.training_process(inputs, labels)
 
                 progress_bar(i, len(train_loader), epoch + 1, current_task + 1, loss)
+                
+            # save the model state after each epoch
+            model_state = {
+                "model_state_dict": model.net.state_dict(),
+                "optimizer_state_dict": model.opt.state_dict(),
+                "current_task": current_task,
+                "epoch": epoch,
+                "task_wise_accuracy": task_wise_accuracy,
+                "task_max_accuracy": task_max_accuracy,
+            }
+            checkpoint = os.path.join(args.checkpoint_path, model.NAME + "_last.pt")
+            torch.save(model_state, checkpoint)
 
         # Evaluate the model on the current task
         curr_task_wise_accuracy = evaluate(model, dataset, current_task)
@@ -107,7 +135,7 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
 
     # Calculate forgetting metrics
     print("\nForgetting metrics:")
-    for task_idx in range(tasks - 1):  # Skip last task as it has no forgetting
+    for task_idx in range(tasks):
         max_acc = task_max_accuracy[task_idx]
         final_acc = task_wise_accuracy[-1][task_idx]
         forgetting = max_acc - final_acc

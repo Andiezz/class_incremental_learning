@@ -34,6 +34,8 @@ def get_args() -> None:
         default=1,
         help="The number of epochs for each task.",
     )
+    parser.add_argument("--checkpoint-path", "-c", type=str, default="checkpoints", help="checkpoint folder")
+    parser.add_argument("--resume-training", "-r", type=bool, default=False, help="Continue training or not")
     parser.add_argument(
         "--num_workers",
         type=int,

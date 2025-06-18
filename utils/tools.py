@@ -30,7 +30,7 @@ def progress_bar(
 ) -> None:
     """
     Prints out the progress bar on the stderr file.
-    
+
     :param i: the current iteration
     :param max_iter: the maximum number of iteration
     :param epoch: the epoch
@@ -43,7 +43,7 @@ def progress_bar(
         print(
             "\r[ {} ] Task {} | epoch {}: |{}| loss: {}".format(
                 datetime.now().strftime("%m-%d | %H:%M"),
-                task_number + 1 if isinstance(task_number, int) else task_number,
+                task_number,
                 epoch,
                 progress_bar,
                 round(loss / (i + 1), 8),
@@ -52,3 +52,5 @@ def progress_bar(
             end="",
             flush=True,
         )
+        if (i + 1) == max_iter:
+            print(file=sys.stderr, end="\n", flush=True)

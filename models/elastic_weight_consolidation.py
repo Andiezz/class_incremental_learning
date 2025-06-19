@@ -1,6 +1,6 @@
 import torch
 from models.utils.continual_model import ContinualModel
-from copy import deepcopy
+from torch.utils.data import DataLoader
 
 
 class ElasticWeightConsolidation(ContinualModel):
@@ -29,12 +29,16 @@ class ElasticWeightConsolidation(ContinualModel):
         self.optimal_parameters = {}
 
         # Regularization strength (lambda)
-        self.ewc_lambda = args.ewc_lambda if hasattr(args, "ewc_lambda") else 5000
+        self.ewc_lambda = args.ewc_lambda if hasattr(args, "ewc_lambda") else 100
 
         # Current task index
         self.current_task = 0
 
-    def compute_fisher_information(self, dataset):
+        # Store current inputs and labels for calculating Fisher Information
+        self.current_inputs = None
+        self.current_labels = None
+
+    def compute_fisher_information(self, train_loader: DataLoader):
         """
         Compute the Fisher Information Matrix which represents parameter importance.
 
@@ -42,7 +46,7 @@ class ElasticWeightConsolidation(ContinualModel):
         """
         # Create a data loader
         data_loader = torch.utils.data.DataLoader(
-            dataset,
+            train_loader.dataset,
             batch_size=self.args.batch_size,
             shuffle=True,
             num_workers=self.args.num_workers,
@@ -57,7 +61,9 @@ class ElasticWeightConsolidation(ContinualModel):
 
         # Compute Fisher Information
         samples_so_far = 0
-        num_samples = min(len(dataset), 1000)  # Limit computation to 1000 samples
+        num_samples = min(
+            len(train_loader.dataset), 1000
+        )  # Limit computation to 1000 samples to reduce computation mass
 
         for inputs, labels in data_loader:
             if samples_so_far >= num_samples:
@@ -76,14 +82,27 @@ class ElasticWeightConsolidation(ContinualModel):
                 sample_output = outputs[i].unsqueeze(0)
                 sample_label = labels[i].unsqueeze(0)
 
+                # # For the last element, don't retain graph
+                retain = i < batch_size - 1
+
                 # Compute the negative log likelihood loss
                 loss = self.loss(sample_output, sample_label)
-                loss.backward()
+                loss.backward(retain_graph=retain)
 
                 # Accumulate the gradients
                 for name, param in self.net.named_parameters():
                     if param.grad is not None:
+                        # Check for NaN
+                        # if not torch.isnan(param.grad).any(): # TODO
                         self.parameter_importance[name] += param.grad**2 / num_samples
+
+                # Free  memory after using the gradients
+                self.net.zero_grad()
+
+        # Normalize the parameter importance values
+        # After computing Fisher Information for all samples
+        for name in self.parameter_importance:
+            self.parameter_importance[name] /= num_samples
 
         # Store the current optimal parameters
         self.optimal_parameters[self.current_task] = {}
@@ -121,6 +140,15 @@ class ElasticWeightConsolidation(ContinualModel):
                     # Compute the EWC penalty
                     optimal_param = self.optimal_parameters[task_id][name]
                     importance = self.parameter_importance[name]
+
+                    # Check for NaN values
+                    if (
+                        torch.isnan(importance).any()
+                        or torch.isnan(param).any()
+                        or torch.isnan(optimal_param).any()
+                    ):
+                        continue
+
                     ewc_loss += torch.sum(importance * (param - optimal_param) ** 2)
 
             # Scale the EWC loss with lambda
@@ -130,15 +158,19 @@ class ElasticWeightConsolidation(ContinualModel):
         # Backpropagation and optimization
         self.opt.zero_grad()
         loss.backward()
+
+        # Add gradient clipping
+        torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=10.0)
+
         self.opt.step()
 
         return loss.item()
 
-    def after_task(self, dataset):
+    def after_task(self, train_loader: DataLoader):
         """
         Method called after completing a task.
         Computes the Fisher Information Matrix for the current task.
 
         :param dataset: dataset for the current task
         """
-        self.compute_fisher_information(dataset)
+        self.compute_fisher_information(train_loader)

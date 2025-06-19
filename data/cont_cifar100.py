@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader
@@ -45,7 +46,7 @@ class ContinualCIFAR100(ContinualDataset):
         ]
     )
 
-    def get_data_loaders(self, masked_loaders=True):
+    def get_data_loaders(self, masked_loaders=True) -> Tuple[DataLoader, DataLoader]:
         tranform = self.TRANSFORM
 
         train_dataset = MyCIFAR100(

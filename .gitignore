@@ -4,6 +4,9 @@ datasets/*
 # Checkpoints
 checkpoints/*
 
+# Log files
+logs/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

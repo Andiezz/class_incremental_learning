@@ -59,6 +59,14 @@ class ContinualModel(nn.Module):
     
     @staticmethod
     @abstractmethod
+    def after_task() -> nn.Module:
+        """
+        After task calculation for EWC.
+        """
+        pass
+
+    @staticmethod
+    @abstractmethod
     def get_backbone() -> nn.Module:
         """
         Returns the backbone to be used for to the current dataset.

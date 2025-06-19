@@ -23,17 +23,20 @@ class Buffer:
         When new classes arrive, redistribute buffer space to maintain balance.
 
         Args:
-            inputs: Tensor of input samples
-            labels: Tensor of corresponding labels
+            inputs: Tensor of input samples (batch_size, channels, height, width)
+            labels: Tensor of corresponding labels (batch_size)
         """
-        self.experience_buffer["inputs"].append(inputs.to(self.device))
-        self.experience_buffer["labels"].append(labels.to(self.device))
-        for label in labels:
-            label_item = label.item()
+        # Handle batched inputs
+        for i in range(len(labels)):
+            self.experience_buffer["inputs"].append(inputs[i].unsqueeze(0).to(self.device))
+            label_item = labels[i].item()
+            self.experience_buffer["labels"].append(label_item)
+            
             if label_item in self.seen_classes:
                 self.seen_classes[label_item] += 1
             else:
                 self.seen_classes[label_item] = 1
+
         self.class_size = self.buffer_size // len(self.seen_classes)
 
         if len(self.experience_buffer["inputs"]) > self.buffer_size:
@@ -43,9 +46,10 @@ class Buffer:
                     indices_to_remove = [
                         i
                         for i, label in enumerate(self.experience_buffer["labels"])
-                        if label.item() == class_label
+                        if label == class_label
                     ]
                     indices_to_remove = indices_to_remove[: size - self.class_size]
+                    self.seen_classes[class_label] = self.class_size
                     for index in sorted(indices_to_remove, reverse=True):
                         del self.experience_buffer["inputs"][index]
                         del self.experience_buffer["labels"][index]
@@ -56,7 +60,7 @@ class Buffer:
         If the buffer does not have enough samples for balanced sampling, it samples as many as possible per class and fills the rest randomly.
 
         Args:
-            batch_size: Number of samples to return
+            batch_size: Number of samples to return, should be bigger than the number of unique classes in the buffer.
 
         Returns:
             tuple: (inputs, labels) tensors of sampled experiences
@@ -109,4 +113,12 @@ class Buffer:
         )
 
         return inputs, labels
-
+    
+    def is_empty(self) -> bool:
+        """
+        Returns true if the buffer is empty, false otherwise.
+        """
+        if len(self.seen_classes.keys()) == 0:
+            return True
+        else:
+            return False

@@ -20,7 +20,7 @@ def get_args() -> None:
     parser.add_argument(
         "--model",
         type=str,
-        default="naive",
+        default="elastic_weight_consolidation",
         help="Model name.",
         choices=get_all_models(),
     )
@@ -30,7 +30,7 @@ def get_args() -> None:
     parser.add_argument(
         "--epochs",
         type=int,
-        default=20,
+        default=10,
         help="The number of epochs for each task.",
     )
     parser.add_argument(
@@ -77,6 +77,12 @@ def get_args() -> None:
         type=int,
         default=8,
         help="Size of the mini-batch buffer for training.",
+    )
+    parser.add_argument(
+        "--ewc_lambda",
+        type=float,
+        default=100,
+        help="Regularization strength for Elastic Weight Consolidation.",
     )
     parser.add_argument("--log-path", "-l", type=str, default="logs", help="log folder")
     parser.add_argument("--seed", type=int, default=612, help="The random seed.")

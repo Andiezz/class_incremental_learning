@@ -1,6 +1,7 @@
 import torch
 from models.utils.continual_model import ContinualModel
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 
 class ElasticWeightConsolidation(ContinualModel):
@@ -22,8 +23,10 @@ class ElasticWeightConsolidation(ContinualModel):
             backbone, loss, args, transform
         )
 
-        # Initialize importance measure for each parameter (Fisher Information)
-        self.parameter_importance = {}
+        # Initialize importance measure for each parameter (Fisher Information) per task
+        self.parameter_importance = (
+            {}
+        )  # Will be a dict of dicts: {task_id: {param_name: tensor}}
 
         # Initialize dictionary to store optimal parameters after each task
         self.optimal_parameters = {}
@@ -42,7 +45,7 @@ class ElasticWeightConsolidation(ContinualModel):
         """
         Compute the Fisher Information Matrix which represents parameter importance.
 
-        :param dataset: dataset for the current task
+        :param train_loader: DataLoader for the current task
         """
         # Create a data loader
         data_loader = torch.utils.data.DataLoader(
@@ -52,9 +55,12 @@ class ElasticWeightConsolidation(ContinualModel):
             num_workers=self.args.num_workers,
         )
 
-        # Initialize the parameter importance to zero
+        # Initialize the parameter importance to zero for the current task
+        self.parameter_importance[self.current_task] = {}
         for name, param in self.net.named_parameters():
-            self.parameter_importance[name] = torch.zeros_like(param.data)
+            self.parameter_importance[self.current_task][name] = torch.zeros_like(
+                param.data
+            )
 
         # Set the model to evaluation mode
         self.net.eval()
@@ -86,23 +92,24 @@ class ElasticWeightConsolidation(ContinualModel):
                 retain = i < batch_size - 1
 
                 # Compute the negative log likelihood loss
-                loss = self.loss(sample_output, sample_label)
+                # loss = self.loss(sample_output, sample_label)
+                log_probs = F.log_softmax(sample_output, dim=1)
+                loss = F.nll_loss(log_probs, sample_label)
                 loss.backward(retain_graph=retain)
 
                 # Accumulate the gradients
                 for name, param in self.net.named_parameters():
                     if param.grad is not None:
                         # Check for NaN
-                        # if not torch.isnan(param.grad).any(): # TODO
-                        self.parameter_importance[name] += param.grad**2 / num_samples
-
-                # Free  memory after using the gradients
-                self.net.zero_grad()
+                        if not torch.isnan(param.grad).any():
+                            self.parameter_importance[self.current_task][name] += (
+                                param.grad**2
+                            )
 
         # Normalize the parameter importance values
         # After computing Fisher Information for all samples
-        for name in self.parameter_importance:
-            self.parameter_importance[name] /= num_samples
+        for name in self.parameter_importance[self.current_task]:
+            self.parameter_importance[self.current_task][name] /= num_samples
 
         # Store the current optimal parameters
         self.optimal_parameters[self.current_task] = {}
@@ -139,7 +146,7 @@ class ElasticWeightConsolidation(ContinualModel):
 
                     # Compute the EWC penalty
                     optimal_param = self.optimal_parameters[task_id][name]
-                    importance = self.parameter_importance[name]
+                    importance = self.parameter_importance[task_id][name]
 
                     # Check for NaN values
                     if (
@@ -159,7 +166,7 @@ class ElasticWeightConsolidation(ContinualModel):
         self.opt.zero_grad()
         loss.backward()
 
-        # Add gradient clipping
+        # Add gradient clipping here
         torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=10.0)
 
         self.opt.step()
@@ -171,6 +178,6 @@ class ElasticWeightConsolidation(ContinualModel):
         Method called after completing a task.
         Computes the Fisher Information Matrix for the current task.
 
-        :param dataset: dataset for the current task
+        :param train_loader: DataLoader for the current task
         """
         self.compute_fisher_information(train_loader)

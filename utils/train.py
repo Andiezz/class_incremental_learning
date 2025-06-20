@@ -33,7 +33,6 @@ def evaluate(
     :return: tuple of (task_wise_accuracy, task_wise_loss)
     """
     model.net.eval()
-    model.net.to(model.device)
     test_loaders = dataset.test_loaders
 
     task_wise_accuracy = [0.0] * dataset.N_TASKS
@@ -41,7 +40,7 @@ def evaluate(
 
     with torch.no_grad():
         for task, test_loader in enumerate(test_loaders):
-            correct, total = 0.0, 0.0
+            correct, total = 0, 0
             running_loss = 0.0
             samples_count = 0
 
@@ -86,6 +85,30 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
     # Initialize SummaryWriter for TensorBoard logging
     log_dir = os.path.join(args.log_path, model.NAME)
     writer = SummaryWriter(log_dir=log_dir)
+
+    # Log all hyperparameters
+    hparams = {
+        # Common hyperparameters
+        "model": args.model,
+        "batch_size": args.batch_size,
+        "epochs": args.epochs,
+        "learning_rate": args.lr,
+        "buffer_size": args.buffer_size,
+    }
+
+    # Add model-specific hyperparameters
+    if args.model == "elastic_weight_consolidation":
+        hparams["ewc_lambda"] = model.ewc_lambda
+        writer.add_scalar("Hyperparameters/ewc_lambda", model.ewc_lambda, 0)
+
+    # Log hyperparameters to TensorBoard
+    metric_dict = {"hparam/dummy_metric": 0}  # Required placeholder metric
+    writer.add_hparams(hparams, metric_dict)
+
+    # Log individual hyperparameters for time-series visualization
+    for name, value in hparams.items():
+        if isinstance(value, (int, float)):
+            writer.add_scalar(f"Hyperparameters/{name}", value, 0)
 
     tasks = dataset.N_TASKS
 

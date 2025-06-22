@@ -1,10 +1,3 @@
-# Class Incremental Learning
-
-Design and implement baseline methods for Class-Incremental Learning (CIL) from scratch (no high-level continual learning libraries). The focus is on understanding catastrophic forgetting through various strategies
-
-Sure! Here's the full `README.md` content in Markdown format:
-
-````markdown
 # Continual Learning Baseline Methods
 
 This repository explores various **baseline methods for continual learning** and evaluates them using classification accuracy and forgetting metrics across multiple sequential tasks.
@@ -164,4 +157,3 @@ We evaluated three baseline methods for continual learning:
 - **Elastic Weight Consolidation (EWC)**: Preserves performance on earlier tasks by regularizing important weights. However, high regularization strength can hinder learning of new tasks, showing a trade-off between stability and plasticity.
 
 **Overall**, no single method is optimal across all tasks. Careful tuning and method selection are essential to balance knowledge retention and continual adaptation.
-````

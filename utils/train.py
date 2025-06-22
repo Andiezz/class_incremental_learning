@@ -82,10 +82,33 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
     """
     model.net.to(model.device)
 
-    # Initialize SummaryWriter for TensorBoard logging
-    log_dir = os.path.join(args.log_path, model.NAME)
-    writer = SummaryWriter(log_dir=log_dir)
-
+    # Create hierarchical directory structure for better TensorBoard organization
+    # Create base directory for the model type
+    model_log_dir = os.path.join(args.log_path, model.NAME)
+    os.makedirs(model_log_dir, exist_ok=True)
+    
+    # Create params-specific identifier (without timestamp)
+    if args.model == "elastic_weight_consolidation":
+        params_id = f"lambda{model.ewc_lambda}_lr{args.lr}"
+    elif args.model == "experience_replay":
+        params_id = f"buffer{args.buffer_size}_lr{args.lr}"
+    else:
+        params_id = f"lr{args.lr}"
+        
+    # Add common parameters to all models
+    params_id += f"_bs{args.batch_size}_e{args.epochs}"
+    
+    # Add a timestamp to ensure uniqueness
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Final run directory: model_name/params_id/timestamp/
+    run_dir = os.path.join(model_log_dir, params_id, timestamp)
+    writer = SummaryWriter(log_dir=run_dir)
+    
+    # Save simple identifier (without nested structure) for checkpoint naming
+    run_id = f"{model.NAME}_{params_id}_{timestamp}"
+    
     # Log all hyperparameters
     hparams = {
         # Common hyperparameters
@@ -100,10 +123,6 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
     if args.model == "elastic_weight_consolidation":
         hparams["ewc_lambda"] = model.ewc_lambda
         writer.add_scalar("Hyperparameters/ewc_lambda", model.ewc_lambda, 0)
-
-    # Log hyperparameters to TensorBoard
-    metric_dict = {"hparam/dummy_metric": 0}  # Required placeholder metric
-    writer.add_hparams(hparams, metric_dict)
 
     # Log individual hyperparameters for time-series visualization
     for name, value in hparams.items():
@@ -191,7 +210,7 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
                 "task_max_accuracy": task_max_accuracy,
                 "task_wise_eval_loss": task_wise_eval_loss,
             }
-            checkpoint = os.path.join(args.checkpoint_path, model.NAME + "_last.pt")
+            checkpoint = os.path.join(args.checkpoint_path, run_id + "_last.pt")
             torch.save(model_state, checkpoint)
 
         # Evaluate the model on the current task
@@ -230,9 +249,9 @@ def train(model: ContinualModel, dataset: ContinualDataset, args: Namespace) -> 
         if args.model == "elastic_weight_consolidation":
             model.after_task(train_loader)
 
-    # Calculate and log final metrics
+    # Calculate and log final metrics - pass hparams here
     calculate_and_log_final_metrics(
-        task_wise_accuracy, task_wise_eval_loss, task_max_accuracy, writer
+        task_wise_accuracy, task_wise_eval_loss, task_max_accuracy, writer, hparams
     )
 
     # Close the SummaryWriter
@@ -244,6 +263,7 @@ def calculate_and_log_final_metrics(
     task_wise_eval_loss: list[list[float]],
     task_max_accuracy: list[float],
     writer: SummaryWriter,
+    hparams: dict,  # Add hparams parameter
 ) -> tuple[float, float]:
     """
     Calculate forgetting metrics and final accuracy/loss across all tasks.
@@ -253,6 +273,7 @@ def calculate_and_log_final_metrics(
         task_wise_eval_loss: Evaluation loss values for each task per task
         task_max_accuracy: Maximum accuracy achieved for each task
         writer: TensorBoard SummaryWriter instance
+        hparams: Hyperparameters dictionary
 
     Returns:
         tuple: (final_average_accuracy, final_average_loss)
@@ -287,6 +308,17 @@ def calculate_and_log_final_metrics(
     # Log final average metrics
     writer.add_scalar("Accuracy/FinalAverage", final_average_accuracy, 0)
     writer.add_scalar("Loss/Validation/FinalAverage", final_average_loss, 0)
+
+    # Log hyperparameters with actual metrics instead of dummy values
+    metric_dict = {
+        "hparam/final_accuracy": final_average_accuracy,
+        "hparam/final_loss": final_average_loss,
+        "hparam/forgetting": sum(
+            [task_max_accuracy[i] - final_task_accuracies[i] for i in range(tasks_seen)]
+        )
+        / tasks_seen,
+    }
+    writer.add_hparams(hparams, metric_dict)
 
     return final_average_accuracy, final_average_loss
 

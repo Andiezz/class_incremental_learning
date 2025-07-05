@@ -30,7 +30,7 @@ def get_args() -> None:
     parser.add_argument(
         "--epochs",
         type=int,
-        default=5,
+        default=1,
         help="The number of epochs for each task.",
     )
     parser.add_argument(

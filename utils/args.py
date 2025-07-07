@@ -26,11 +26,11 @@ def get_args() -> None:
     )
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size.")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size.")
     parser.add_argument(
         "--epochs",
         type=int,
-        default=1,
+        default=5,
         help="The number of epochs for each task.",
     )
     parser.add_argument(

@@ -60,10 +60,6 @@ class ContinualDataset:
                 task_classes = self.class_order[start_idx:end_idx]
                 self.task_classes.append(task_classes)
 
-            print(f"Original classes: {unique_classes}")
-            print(f"Shuffled class order: {self.class_order}")
-            print(f"Task classes: {self.task_classes}")
-
     def get_task_classes(self, task_id: int) -> List[int]:
         """
         Get the classes for a specific task.
